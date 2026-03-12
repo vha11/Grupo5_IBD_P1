@@ -14,52 +14,52 @@ services:
     
   producer:
 
-    image: grupo5/python:latest
+    build:
+      context: ./producer
     container_name: producer
     volumes:
       - ./producer:/app
-    working_dir: /app
-    command: python -u producer.py
-
+    
     environment:
       - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_USERNAME=user
-      - RABBITMQ_PASSWORD=password
+      - RABBITMQ_USERNAME=guest
+      - RABBITMQ_PASSWORD=guest
+      - RABBITMQ_QUEUE=text_analysis_queue
     depends_on:
       - rabbitmq
 
 
   text_analysis:
 
-    image: grupo5/python:latest
+    build:
+      context: ./text-analysis
     container_name: text_analysis
     volumes:
       - ./text-analysis:/app
-    working_dir: /app
-    command: python -u text-analysis.py
-
+    
     environment:
       - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_USERNAME=user
-      - RABBITMQ_PASSWORD=password
+      - RABBITMQ_USERNAME=guest
+      - RABBITMQ_PASSWORD=guest
+      - RABBITMQ_QUEUE=text_analysis_queue
     depends_on:
       - rabbitmq
 
 
   image-class:
 
-    image: grupo5/python:latest
+    build:
+      context: ./image-class
     container_name: image_class
     volumes:
       - ./image-class:/app
-    working_dir: /app
-    command: python -u image-class.py
-
+    
     environment:
-        - RABBITMQ_HOST=rabbitmq
-        - RABBITMQ_USERNAME=user
-        - RABBITMQ_PASSWORD=password
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_USERNAME=guest
+      - RABBITMQ_PASSWORD=guest
+      - RABBITMQ_QUEUE=image_class_queue
     depends_on:
-        - rabbitmq
+      - rabbitmq
 
 
