@@ -41,8 +41,8 @@ services:
         condition: service_healthy
     environment:
       RABBITMQ_HOST: rabbitmq
-      RABBITMQ_USER: admin
-      RABBITMQ_PASS: admin
+      RABBITMQ_USER: grupo5
+      RABBITMQ_PASS: cbadenes
       LOGGER_URL: http://task-logger:8000
     volumes:
       - text_results:/data           # CSV persiste aunque el contenedor muera
