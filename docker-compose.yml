@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+
+    ports:
+     - "5672:5672"
+     - "15672:15672"
+
+    environment:
+      RABBITMQ_DEFAULT_USER: user
+      RABBITMQ_DEFAULT_PASS: password
+    
+  producer:
+
+    image: grupo5/python:latest
+    container_name: producer
+    volumes:
+      - ./producer:/app
+    working_dir: /app
+    command: python -u producer.py
+
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_USERNAME=user
+      - RABBITMQ_PASSWORD=password
+    depends_on:
+      - rabbitmq
+
+
+  text_analysis:
+
+    image: grupo5/python:latest
+    container_name: text_analysis
+    volumes:
+      - ./text-analysis:/app
+    working_dir: /app
+    command: python -u text-analysis.py
+
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_USERNAME=user
+      - RABBITMQ_PASSWORD=password
+    depends_on:
+      - rabbitmq
+
+
+  image-class:
+
+    image: grupo5/python:latest
+    container_name: image_class
+    volumes:
+      - ./image-class:/app
+    working_dir: /app
+    command: python -u image-class.py
+
+    environment:
+        - RABBITMQ_HOST=rabbitmq
+        - RABBITMQ_USERNAME=user
+        - RABBITMQ_PASSWORD=password
+    depends_on:
+        - rabbitmq
+
+
