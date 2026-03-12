@@ -10,6 +10,152 @@ La arquitectura que usamos es **orientada a eventos**, lo que permite que el sis
 
 ---
 
+# Cómo desplegar la infraestructura del sistema
+
+Para ejecutar toda la infraestructura se utiliza **Docker Compose**.
+
+1. Clonar el repositorio
+
+```
+git clone <URL_DEL_REPOSITORIO>
+```
+
+2. Entrar al directorio del proyecto
+
+```
+cd Grupo5_IBD_P1
+```
+
+3. Construir y ejecutar todos los servicios
+
+```
+docker compose up --build
+```
+
+Esto iniciará automáticamente los siguientes componentes del sistema:
+
+- RabbitMQ (broker de mensajes)
+- Task Producer
+- Text Agent
+- Image Agent
+- Task Logger
+
+Todos los servicios se ejecutan dentro de contenedores Docker y se comunican a través de la red `bigdata_net`.
+
+---
+
+# Cómo ejecutar los agentes
+
+Los agentes se ejecutan automáticamente como parte de los servicios definidos en `docker-compose.yml`.
+
+Al ejecutar:
+
+```
+docker compose up
+```
+
+se levantan los contenedores:
+
+- `text-agent`
+- `image-agent`
+
+Estos agentes se conectan al broker RabbitMQ y comienzan a consumir tareas de las colas correspondientes.
+
+También es posible escalar horizontalmente los agentes para aumentar la capacidad de procesamiento. Por ejemplo:
+
+```
+docker compose up --scale text-agent=3
+```
+
+Esto ejecutará tres instancias del agente de texto procesando tareas en paralelo.
+
+---
+
+# Cómo probar el funcionamiento del sistema
+
+Una vez desplegado el sistema se pueden realizar varias verificaciones para comprobar que funciona correctamente.
+
+### 1. Verificar RabbitMQ
+
+RabbitMQ incluye una interfaz de administración accesible en:
+
+```
+http://localhost:15672
+```
+
+Credenciales:
+
+```
+usuario: grupo5
+password: cbadenes
+```
+
+Desde esta interfaz se pueden observar:
+
+- las colas del sistema
+- los mensajes que se están procesando
+- el consumo de tareas por parte de los agentes
+
+---
+
+### 2. Verificar generación de tareas
+
+El **Task Producer** genera tareas automáticamente con una frecuencia de **1 tarea por segundo**.
+
+En los logs del contenedor se puede observar la generación de tareas:
+
+```
+docker compose logs task-producer
+```
+
+---
+
+### 3. Verificar procesamiento de tareas
+
+Los agentes consumen tareas desde RabbitMQ y generan resultados.
+
+Esto puede observarse en los logs:
+
+```
+docker compose logs text-agent
+docker compose logs image-agent
+```
+
+---
+
+### 4. Verificar resultados generados
+
+Cada agente guarda sus resultados en archivos CSV dentro del volumen Docker.
+
+Ejemplos:
+
+```
+/data/text_agent_results.csv
+/data/image_agent_results.csv
+```
+
+Estos archivos permiten comprobar qué tareas fueron procesadas por cada agente.
+
+---
+
+### 5. Consultar el logger
+
+El **Task Logger** expone una API accesible en:
+
+```
+http://localhost:8000
+```
+
+Se pueden consultar estadísticas del sistema en:
+
+```
+http://localhost:8000/stats
+```
+
+Esto permite verificar que los resultados están siendo enviados correctamente por los agentes.
+
+---
+
 # Arquitectura del sistema
 
 El sistema está compuesto por los siguientes servicios:
@@ -32,7 +178,7 @@ Producer → RabbitMQ → Agents → CSV + Logger
 4. Cada agente procesa la tarea.  
 5. El resultado se guarda en CSV y se envía al logger.  
 
----
+
 
 # Justificación de las decisiones
 
@@ -42,7 +188,7 @@ Elegimos una **Event-Driven Architecture** porque el sistema necesita procesar t
 
 El productor genera eventos (tareas) y los agentes reaccionan a esos eventos cuando están disponibles. Esto evita que los servicios dependan directamente unos de otros y permite que el sistema escale fácilmente.
 
----
+
 
 ## Red Docker
 
@@ -54,7 +200,7 @@ Por esta razón utilizamos una red de tipo **bridge**. Este tipo de red permite 
 
 Además, usar una red Docker permite que los servicios se descubran entre sí utilizando el nombre definido en Docker Compose (por ejemplo `rabbitmq`), sin necesidad de configurar direcciones IP manualmente.
 
----
+
 
 ## Uso de RabbitMQ
 
@@ -75,7 +221,7 @@ delivery_mode = 2
 
 Esto ayuda a evitar la pérdida de tareas.
 
----
+
 
 ## Procesamiento asíncrono
 
@@ -89,7 +235,7 @@ time.sleep(random.uniform(3,5))
 
 Esto permite probar cómo el sistema maneja colas de tareas cuando el procesamiento tarda más que la generación.
 
----
+
 
 ## Confirmación de tareas (ACK)
 
@@ -105,7 +251,7 @@ Si el agente falla antes del ACK, RabbitMQ vuelve a enviar la tarea a otro agent
 
 Esto ayuda a cumplir el requisito de **no perder tareas**.
 
----
+
 
 ## Persistencia de resultados
 
@@ -122,7 +268,7 @@ Esto permite que los resultados **no se pierdan si el contenedor se reinicia**.
 
 Además cada agente incluye su `agent_id` (hostname del contenedor) para poder diferenciar qué instancia procesó cada tarea.
 
----
+
 
 ## Escalabilidad
 
@@ -136,7 +282,7 @@ docker compose up --scale text-agent=3
 
 Esto permite que varios agentes procesen tareas al mismo tiempo, aumentando la capacidad del sistema.
 
----
+
 
 # Componentes del sistema
 
@@ -156,7 +302,7 @@ Cada tarea tiene el formato:
 
 Las tareas se generan a una frecuencia configurable (`TASK_RATE`).
 
----
+
 
 ## Text Agent
 
@@ -172,7 +318,7 @@ timestamp
 agent_id
 ```
 
----
+
 
 ## Image Agent
 
@@ -188,7 +334,7 @@ timestamp
 agent_id
 ```
 
----
+
 
 ## Task Logger
 
@@ -201,75 +347,6 @@ POST /results
 ```
 
 El logger mantiene los resultados en memoria y permite consultar estadísticas del sistema.
-
----
-
-# Cómo ejecutar el sistema
-
-### 1. Clonar el repositorio
-
-```
-git clone <repo>
-```
-
-### 2. Ir al directorio del proyecto
-
-```
-cd Grupo5_IBD_P1
-```
-
-### 3. Ejecutar la infraestructura
-
-```
-docker compose up --build
-```
-
-Esto iniciará:
-
-- RabbitMQ  
-- Task Producer  
-- Text Agent  
-- Image Agent  
-- Task Logger  
-
----
-
-# Interfaz de RabbitMQ
-
-RabbitMQ incluye un panel de administración accesible en:
-
-```
-http://localhost:15672
-```
-
-Usuario:
-
-```
-grupo5
-```
-
-Password:
-
-```
-cbadenes
-```
-
----
-
-# Cómo probar el sistema
-
-Una vez iniciado el sistema:
-
-1. El producer comenzará a generar tareas automáticamente.  
-2. Los agentes consumirán las tareas desde RabbitMQ.  
-3. Los resultados se guardarán en los archivos CSV.  
-4. El logger recibirá los resultados.  
-
-También se pueden consultar estadísticas del sistema en:
-
-```
-http://localhost:8000/stats
-```
 
 ---
 
@@ -286,8 +363,6 @@ Grupo5_IBD_P1
 ├ image_agent
 └ task_logger
 ```
-
----
 
 La infraestructura desarrollada permite procesar tareas de forma distribuida utilizando una arquitectura orientada a eventos.  
 El sistema soporta procesamiento asíncrono, persistencia de resultados y escalabilidad horizontal mediante contenedores Docker.
