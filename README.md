@@ -1,6 +1,5 @@
 # Práctica 1 — Infraestructura de Procesamiento de Tareas con Agentes de IA
 
-## Descripción
 
 En esta práctica implementamos una infraestructura distribuida para procesar tareas usando agentes de IA simulados.
 
@@ -8,7 +7,6 @@ El sistema genera tareas automáticamente y las envía a una cola de mensajes. L
 
 La arquitectura que usamos es **orientada a eventos**, lo que permite que el sistema funcione de forma **asíncrona** y que los agentes puedan procesar tareas en paralelo.
 
----
 
 # Cómo desplegar la infraestructura del sistema
 
@@ -42,7 +40,7 @@ Esto iniciará automáticamente los siguientes componentes del sistema:
 
 Todos los servicios se ejecutan dentro de contenedores Docker y se comunican a través de la red `bigdata_net`.
 
----
+
 
 # Cómo ejecutar los agentes
 
@@ -69,7 +67,6 @@ docker compose up --scale text-agent=3
 
 Esto ejecutará tres instancias del agente de texto procesando tareas en paralelo.
 
----
 
 # Cómo probar el funcionamiento del sistema
 
@@ -96,7 +93,7 @@ Desde esta interfaz se pueden observar:
 - los mensajes que se están procesando
 - el consumo de tareas por parte de los agentes
 
----
+
 
 ### 2. Verificar generación de tareas
 
@@ -108,7 +105,7 @@ En los logs del contenedor se puede observar la generación de tareas:
 docker compose logs task-producer
 ```
 
----
+
 
 ### 3. Verificar procesamiento de tareas
 
@@ -121,7 +118,7 @@ docker compose logs text-agent
 docker compose logs image-agent
 ```
 
----
+
 
 ### 4. Verificar resultados generados
 
@@ -136,7 +133,7 @@ Ejemplos:
 
 Estos archivos permiten comprobar qué tareas fueron procesadas por cada agente.
 
----
+
 
 ### 5. Consultar el logger
 
