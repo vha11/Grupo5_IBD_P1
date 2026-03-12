@@ -8,27 +8,27 @@ import logging
 logging.basicConfig(level=logging.INFO, format='[TASK-LOGGER] %(message)s')
 
 app = FastAPI(
-    title="Task Logger — Big Data Práctica 1",
-    description="API central de registro de resultados de agentes de IA",
+    title="Task Logger — IBD Práctica 1",
+    description="API central agentes de IA",
     version="1.0.0"
 )
 
-# Almacenamiento en memoria (suficiente para la práctica)
-results_db: list[dict] = []
 
-# ── MODELOS ───────────────────────────────────────────────────────
+results_db: list[dict] = [] # nos da el alcenamiento en memoria de los que se ontenga de la tarea
+
+# aquí los modelos
 
 class TaskResult(BaseModel):
     task_id:    str
     timestamp:  Optional[str] = None
     agent_id:   Optional[str] = None
-    # Campos texto
+    # campos texto
     sentiment:  Optional[str] = None
     confidence: Optional[float] = None
-    # Campos imagen
+    # campos imagen
     label:      Optional[str] = None
 
-# ── ENDPOINTS ─────────────────────────────────────────────────────
+# aquí estpán los endpoints de la API chicos 
 
 @app.get("/", tags=["Info"])
 def root():
@@ -78,20 +78,20 @@ def get_stats():
     if not results_db:
         return {"message": "Sin resultados todavía", "total": 0}
 
-    # Separar por tipo
+    # Cookie esto separa por tipo
     text_results  = [r for r in results_db if r.get("sentiment") is not None]
     image_results = [r for r in results_db if r.get("label") is not None]
 
-    # Agentes activos
+    # con esto se sabe que agentes están activos
     agents = list(set(r.get("agent_id", "unknown") for r in results_db))
 
-    # Distribución de sentimientos
+
     sentiment_dist = dict(Counter(r["sentiment"] for r in text_results))
 
-    # Distribución de labels
+
     label_dist = dict(Counter(r["label"] for r in image_results))
 
-    # Confianza promedio
+    # chicos esto hacee la simulación de la confianza promedio (solo para tareas de texto)
     avg_confidence = (
         round(sum(r["confidence"] for r in results_db if r.get("confidence")) /
               len([r for r in results_db if r.get("confidence")]), 3)
@@ -109,9 +109,9 @@ def get_stats():
         "label_distribution":     label_dist,
     }
 
+# solo para que hciieamos testing 
 @app.delete("/results", tags=["Admin"])
 def clear_results():
-    """Limpia todos los resultados (útil para testing)."""
     count = len(results_db)
     results_db.clear()
     return {"status": "cleared", "deleted": count}

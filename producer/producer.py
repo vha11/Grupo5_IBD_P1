@@ -61,7 +61,7 @@ def publish_task(channel, task_type, content):
     logging.info(f"Publicada tarea {task['task_id'][:8]}... → {queue_name}")
     return task
 
-# Contenidos de ejemplo para las tareas
+
 TEXT_SAMPLES = [
     "This product is amazing! I love it.",
     "Terrible experience, never buying again.",

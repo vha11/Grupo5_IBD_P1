@@ -59,8 +59,8 @@ def process_task(ch, method, properties, body):
 
     logging.info(f"Clasificando imagen {task_id[:8]}... archivo: '{task['content']}'")
 
-    # Simular procesamiento (imágenes tardan un poco más)
-    time.sleep(random.uniform(3, 5))
+    
+    time.sleep(random.uniform(3, 5)) # aqupi puse lo del requsiito de que la tarea tarde de entre 3 a 5 segundos
 
     result = {
         "task_id":    task_id,
