@@ -1,0 +1,85 @@
+services:
+
+  # ── BROKER DE MENSAJES ──────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"       # AMQP (uso interno entre servicios)
+      - "15672:15672"     # Web UI → http://localhost:15672  (admin/admin)
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bigdata_net
+
+  # ── PRODUCTOR DE TAREAS ─────────────────────────────────────────
+  task-producer:
+    build: ./producer
+    container_name: task-producer
+    depends_on:
+      rabbitmq:
+        condition: service_healthy   # espera hasta que RabbitMQ esté listo
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: admin
+      RABBITMQ_PASS: admin
+      TASK_RATE: 1                   # 1 tarea por segundo
+    networks:
+      - bigdata_net
+
+  # ── AGENTE DE TEXTO (obligatorio) ───────────────────────────────
+  text-agent:
+    build: ./text_agent
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: admin
+      RABBITMQ_PASS: admin
+      LOGGER_URL: http://task-logger:8000
+    volumes:
+      - text_results:/data           # CSV persiste aunque el contenedor muera
+    networks:
+      - bigdata_net
+
+  # ── AGENTE DE IMÁGENES (bonus) ───────────────────────────────────
+  image-agent:
+    build: ./image_agent
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: admin
+      RABBITMQ_PASS: admin
+      LOGGER_URL: http://task-logger:8000
+    volumes:
+      - image_results:/data
+    networks:
+      - bigdata_net
+
+  # ── TASK LOGGER (API HTTP central) ──────────────────────────────
+  task-logger:
+    build: ./task_logger
+    container_name: task-logger
+    ports:
+      - "8000:8000"                  # API → http://localhost:8000/docs
+    networks:
+      - bigdata_net
+
+# ── VOLÚMENES PERSISTENTES ────────────────────────────────────────
+volumes:
+  text_results:    # almacena text_agent_results.csv
+  image_results:   # almacena image_agent_results.csv
+
+# ── RED AISLADA (evita colisiones con otros grupos) ───────────────
+networks:
+  bigdata_net:
+    driver: bridge
