@@ -1,2 +1,235 @@
-# Grupo5_IBD_P1
-En esta práctica se deberá diseñar e implementar una infraestructura distribuida que permita a agentes de inteligencia artificial procesar tareas de forma asíncrona.
+Práctica 1 — Infraestructura de Procesamiento de Tareas con Agentes de IA
+Descripción
+
+En esta práctica implementamos una infraestructura distribuida para procesar tareas usando agentes de IA simulados.
+
+El sistema genera tareas automáticamente y las envía a una cola de mensajes. Los agentes consumen esas tareas, las procesan y guardan los resultados.
+
+La arquitectura que usamos es orientada a eventos, lo que permite que el sistema funcione de forma asíncrona y que los agentes puedan procesar tareas en paralelo.
+
+Arquitectura del sistema
+
+El sistema está compuesto por los siguientes servicios:
+
+RabbitMQ → broker de mensajes
+
+Task Producer → genera tareas continuamente
+
+Text Agent → analiza texto (simulación de análisis de sentimiento)
+
+Image Agent → clasifica imágenes (simulación)
+
+Task Logger → API central que recibe resultados de los agentes
+
+Flujo del sistema:
+
+Producer → RabbitMQ → Agents → CSV + Logger
+
+El producer genera tareas.
+
+Las tareas se envían a RabbitMQ.
+
+Los agentes consumen las tareas desde la cola.
+
+Cada agente procesa la tarea.
+
+El resultado se guarda en CSV y se envía al logger.
+
+Justificación de las decisiones
+Arquitectura orientada a eventos
+
+Elegimos una Event-Driven Architecture porque el sistema necesita procesar tareas de forma asíncrona.
+
+El productor genera eventos (tareas) y los agentes reaccionan a esos eventos cuando están disponibles. Esto evita que los servicios dependan directamente unos de otros y permite que el sistema escale fácilmente.
+
+Uso de RabbitMQ
+
+RabbitMQ se usa como message broker para gestionar las tareas.
+
+Las tareas se envían a dos colas:
+
+text_tasks
+
+image_tasks
+
+Estas colas se declaran como durable=True, lo que permite que sobrevivan reinicios del broker. 
+
+producer
+
+Además los mensajes se publican como persistentes usando:
+
+delivery_mode = 2
+
+Esto ayuda a evitar pérdida de tareas. 
+
+producer
+
+Procesamiento asíncrono
+
+Los agentes consumen tareas desde RabbitMQ usando basic_consume.
+
+Cada agente procesa las tareas con un tiempo simulado entre 3 y 5 segundos, como pide el enunciado. 
+
+image_agent
+
+Esto se simula usando:
+
+time.sleep(random.uniform(3,5))
+
+Esto permite probar cómo el sistema maneja colas de tareas cuando el procesamiento tarda más que la generación.
+
+Confirmación de tareas (ACK)
+
+Los agentes solo confirman la tarea después de procesarla correctamente.
+
+El orden es:
+
+guardar resultado → notificar logger → ACK
+
+Si el agente falla antes del ACK, RabbitMQ vuelve a enviar la tarea a otro agente. 
+
+text_agent
+
+Esto ayuda a cumplir el requisito de no perder tareas.
+
+Persistencia de resultados
+
+Cada agente guarda sus resultados en archivos CSV dentro de un volumen Docker.
+
+Ejemplos:
+
+/data/text_agent_results.csv
+/data/image_agent_results.csv
+
+Esto permite que los resultados no se pierdan si el contenedor se reinicia.
+
+Además cada agente incluye su agent_id (hostname del contenedor) para poder diferenciar qué instancia procesó cada tarea. 
+
+image_agent
+
+Escalabilidad
+
+La arquitectura permite ejecutar múltiples instancias de agentes.
+
+Por ejemplo:
+
+docker compose up --scale text-agent=3
+
+Esto permite que varios agentes procesen tareas al mismo tiempo, aumentando la capacidad del sistema.
+
+Componentes del sistema
+Producer
+
+Genera tareas automáticamente.
+
+Cada tarea tiene el formato:
+
+{
+ "task_id": "...",
+ "type": "text_analysis | image_classification",
+ "content": "..."
+}
+
+Las tareas se generan a una frecuencia configurable (TASK_RATE).
+
+Text Agent
+
+Procesa tareas de análisis de texto.
+
+Simula un análisis de sentimiento usando reglas simples y genera:
+
+task_id
+sentiment
+confidence
+timestamp
+agent_id
+Image Agent
+
+Procesa tareas de clasificación de imágenes.
+
+El agente genera una etiqueta aleatoria y un valor de confianza.
+
+task_id
+label
+confidence
+timestamp
+agent_id
+Task Logger
+
+Es una API construida con FastAPI que recibe los resultados de los agentes.
+
+Los agentes envían los resultados usando:
+
+POST /results
+
+El logger mantiene los resultados en memoria y permite consultar estadísticas del sistema. 
+
+main
+
+Cómo ejecutar el sistema
+
+Clonar el repositorio
+
+git clone <repo>
+
+Ir al directorio del proyecto
+
+cd Grupo5_IBD_P1
+
+Ejecutar la infraestructura
+
+docker compose up --build
+
+Esto inicia:
+
+RabbitMQ
+
+Producer
+
+Text Agent
+
+Image Agent
+
+Task Logger
+
+Interfaz de RabbitMQ
+
+RabbitMQ incluye un panel de administración accesible en:
+
+http://localhost:15672
+
+Usuario:
+
+grupo5
+
+Password:
+
+cbadenes
+Cómo probar el sistema
+
+Una vez iniciado el sistema:
+
+El producer comenzará a generar tareas automáticamente.
+
+Los agentes consumirán las tareas desde RabbitMQ.
+
+Los resultados se guardarán en los archivos CSV.
+
+El logger recibirá los resultados.
+
+También se pueden consultar estadísticas del sistema en:
+
+http://localhost:8000/stats
+Estructura del repositorio
+Grupo5_IBD_P1
+│
+├ docker-compose.yml
+├ README.md
+│
+├ producer
+│
+├ text_agent
+│
+├ image_agent
+│
+└ task_logger
