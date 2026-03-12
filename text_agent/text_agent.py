@@ -17,7 +17,7 @@ RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "admin")
 LOGGER_URL    = os.getenv("LOGGER_URL", "http://localhost:8000")
 CSV_PATH      = "/data/text_agent_results.csv"
 
-# Identificador único de esta instancia del agente
+
 AGENT_ID = socket.gethostname()
 
 def connect_rabbitmq():
@@ -52,7 +52,7 @@ def simulate_sentiment(content: str) -> tuple[str, float]:
     Simula análisis de sentimiento.
     En producción real aquí iría un modelo de NLP.
     """
-    # Palabras clave simples para simular lógica plausible
+    
     positive_words = ['amazing', 'fantastic', 'love', 'great', 'excellent', 'wonderful']
     negative_words = ['terrible', 'awful', 'hate', 'bad', 'worst', 'never']
 
@@ -102,11 +102,11 @@ def process_task(ch, method, properties, body):
 
     logging.info(f"Procesando tarea {task_id[:8]}... contenido: '{task['content'][:40]}'")
 
-    # Simular tiempo de procesamiento (3-5 segundos)
+    
     processing_time = random.uniform(3, 5)
     time.sleep(processing_time)
 
-    # Generar resultado
+    
     sentiment, confidence = simulate_sentiment(task['content'])
     result = {
         "task_id":    task_id,
@@ -116,15 +116,14 @@ def process_task(ch, method, properties, body):
         "agent_id":   AGENT_ID
     }
 
-    # 1. Guardar en CSV (primero)
+    # guardamos en CSV 
     save_to_csv(result)
     logging.info(f"Resultado guardado: {task_id[:8]}... → {sentiment} ({confidence})")
 
-    # 2. Notificar al Task Logger
+    # luego le notificamps al Task Logger
     notify_logger(result)
 
-    # 3. ACK al broker (confirma que procesamos correctamente)
-    # Solo después de guardar, si falla antes el mensaje se re-entrega
+    # ACK al broker (confirma que procesamos correctamente), esto soolo después de guardar, si falla antes el mensaje se re-entrega
     ch.basic_ack(delivery_tag=method.delivery_tag)
 
 def main():
@@ -132,11 +131,10 @@ def main():
     connection = connect_rabbitmq()
     channel = connection.channel()
 
-    # Declarar queue (idempotente: si ya existe no pasa nada)
+    # Declarar queue (si ya existe no pasa nada)
     channel.queue_declare(queue='text_tasks', durable=True)
 
     # prefetch=1: el agente solo recibe UNA tarea a la vez
-    # Así RabbitMQ hace fair dispatch entre múltiples instancias
     channel.basic_qos(prefetch_count=1)
 
     channel.basic_consume(
