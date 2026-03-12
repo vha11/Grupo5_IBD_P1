@@ -39,6 +39,7 @@ Esto iniciará automáticamente los siguientes componentes del sistema:
 - Task Logger
 
 Todos los servicios se ejecutan dentro de contenedores Docker y se comunican a través de la red `bigdata_net`.
+El despliegue se gestiona completamente mediante **Docker Compose**, lo que permite ejecutar todos los componentes del sistema de forma reproducible.
 
 
 
