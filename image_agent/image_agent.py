@@ -5,7 +5,6 @@ import time
 import os
 import random
 import socket
-import requests
 import logging
 import threading
 from datetime import datetime
@@ -16,7 +15,6 @@ logging.basicConfig(level=logging.INFO, format='[IMAGE-AGENT] %(message)s')
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "grupo5")
 RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "cbadenes")
-LOGGER_URL    = os.getenv("LOGGER_URL", "http://localhost:8000")
 CSV_PATH      = "/data/image_agent_results.csv"
 HTTP_PORT     = int(os.getenv("HTTP_PORT", "8002"))
 AGENT_ID      = socket.gethostname()
@@ -54,11 +52,36 @@ def save_to_csv(result: dict):
         ])
         writer.writerow(result)
 
+publish_connection = None
+publish_channel = None
+publish_lock = threading.Lock()
+
+def get_publish_channel():
+    global publish_connection, publish_channel
+    with publish_lock:
+        try:
+            if publish_connection is None or publish_connection.is_closed:
+                publish_connection = connect_rabbitmq()
+                publish_channel = publish_connection.channel()
+                publish_channel.queue_declare(queue='task_results', durable=True)
+            return publish_channel
+        except Exception as e:
+            logging.warning(f"Error obteniendo canal de publicación: {e}")
+            return None
+
 def notify_logger(result: dict):
     try:
-        requests.post(f"{LOGGER_URL}/results", json=result, timeout=3)
+        ch = get_publish_channel()
+        if ch:
+            ch.basic_publish(
+                exchange='',
+                routing_key='task_results',
+                body=json.dumps(result),
+                properties=pika.BasicProperties(delivery_mode=2)
+            )
+            logging.info(f"Resultado publicado en task_results: {result['task_id'][:8]}...")
     except Exception as e:
-        logging.warning(f"No se pudo notificar al logger: {e}")
+        logging.warning(f"No se pudo publicar en task_results: {e}")
 
 def process_image_task(task: dict):
     task_id = task['task_id']

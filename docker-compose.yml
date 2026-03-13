@@ -40,7 +40,6 @@ services:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USER: grupo5
       RABBITMQ_PASS: cbadenes
-      LOGGER_URL: http://task-logger:8000
       HTTP_PORT: 8001
     ports:
       - "8001:8001"
@@ -58,7 +57,6 @@ services:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USER: grupo5
       RABBITMQ_PASS: cbadenes
-      LOGGER_URL: http://task-logger:8000
       HTTP_PORT: 8002
     ports:
       - "8002:8002"
@@ -70,6 +68,13 @@ services:
   task-logger:
     build: ./task_logger
     container_name: task-logger
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: grupo5
+      RABBITMQ_PASS: cbadenes
     ports:
       - "8000:8000"
     volumes:

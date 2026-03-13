@@ -6,8 +6,16 @@ from collections import Counter
 import logging
 import csv
 import os
+import pika
+import json
+import threading
+import time
 
 logging.basicConfig(level=logging.INFO, format='[TASK-LOGGER] %(message)s')
+
+RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
+RABBITMQ_USER = os.getenv("RABBITMQ_USER", "grupo5")
+RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "cbadenes")
 
 app = FastAPI(
     title="Task Logger — IBD Práctica 1",
@@ -66,10 +74,49 @@ def load_csv():
             results_db.append(entry)
     logging.info(f"CSV cargado: {len(results_db)} registros previos restaurados")
 
+def connect_rabbitmq():
+    credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASS)
+    params = pika.ConnectionParameters(host=RABBITMQ_HOST, credentials=credentials, heartbeat=600)
+    while True:
+        try:
+            connection = pika.BlockingConnection(params)
+            logging.info("Task Logger conectado a RabbitMQ")
+            return connection
+        except Exception as e:
+            logging.warning(f"Esperando RabbitMQ... ({e})")
+            time.sleep(3)
+
+def on_result_received(ch, method, properties, body):
+    try:
+        entry = json.loads(body)
+        if not entry.get("timestamp"):
+            entry["timestamp"] = datetime.now().isoformat()
+        results_db.append(entry)
+        append_to_csv(entry)
+        logging.info(f"Resultado recibido via RabbitMQ: {entry['task_id'][:8]}... agente={entry.get('agent_id', '?')}")
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+    except Exception as e:
+        logging.error(f"Error procesando mensaje: {e}")
+        ch.basic_nack(delivery_tag=method.delivery_tag)
+
+def consume_results():
+    connection = connect_rabbitmq()
+    channel = connection.channel()
+    channel.queue_declare(queue='task_results', durable=True)
+    channel.basic_qos(prefetch_count=10)
+    channel.basic_consume(queue='task_results', on_message_callback=on_result_received)
+    logging.info("Task Logger escuchando en queue 'task_results'...")
+    try:
+        channel.start_consuming()
+    finally:
+        connection.close()
+
 @app.on_event("startup")
 def startup_event():
     init_csv()
     load_csv()
+    thread = threading.Thread(target=consume_results, daemon=True)
+    thread.start()
 
 @app.get("/", tags=["Info"])
 def root():
