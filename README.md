@@ -48,7 +48,7 @@ docker compose ps
 ### RabbitMQ — la cinta transportadora
 
 Entra a `http://localhost:15672` con `grupo5` / `cbadenes` y ves en tiempo real cuántas tareas hay en cola y cuántos agentes están consumiendo.
-![alt text](img\1image.png)
+![Interfaz de RabbitMQ](img/1image.png)
 ### API síncrona de los agentes (nuevo en Día 2)
 
 Cada agente tiene su propia API REST. Puedes mandarle tareas directamente sin pasar por RabbitMQ:
@@ -90,7 +90,7 @@ curl http://localhost:8000/stats
 ```
 
 O entra directo al navegador: `http://localhost:8000/docs` — FastAPI genera una UI interactiva.
-![alt text](img\2image.png)
+![UI interactiva](img/2image.png)
 
 ### Ver el CSV persistido en disco
 
@@ -110,7 +110,7 @@ docker compose logs image-agent
 
 ## Arquitectura
 
-![alt text](img\image.png)
+![Arquitectura P1](img/image.png)
 
 El flujo asíncrono (el original):
 1. El Producer genera 1 tarea/segundo y la manda a RabbitMQ
