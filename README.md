@@ -48,7 +48,7 @@ docker compose ps
 ### RabbitMQ — la cinta transportadora
 
 Entra a `http://localhost:15672` con `grupo5` / `cbadenes` y ves en tiempo real cuántas tareas hay en cola y cuántos agentes están consumiendo.
-
+![alt text](img\1image.png)
 ### API síncrona de los agentes (nuevo en Día 2)
 
 Cada agente tiene su propia API REST. Puedes mandarle tareas directamente sin pasar por RabbitMQ:
@@ -90,6 +90,7 @@ curl http://localhost:8000/stats
 ```
 
 O entra directo al navegador: `http://localhost:8000/docs` — FastAPI genera una UI interactiva.
+![alt text](img\2image.png)
 
 ### Ver el CSV persistido en disco
 
@@ -109,11 +110,7 @@ docker compose logs image-agent
 
 ## Arquitectura
 
-```
-Producer → RabbitMQ → Agents → CSV propio + Task Logger (CSV global)
-                ↑
-         API HTTP directa (síncrono)
-```
+![alt text](img\image.png)
 
 El flujo asíncrono (el original):
 1. El Producer genera 1 tarea/segundo y la manda a RabbitMQ
@@ -147,7 +144,24 @@ El enunciado pide que cada agente pueda recibir peticiones síncronas. Flask cor
 Ya estaba montado del Día 1 y viene con documentación automática en `/docs`. Para el logger tiene más sentido que Flask porque maneja múltiples endpoints con validación de datos.
 
 **Escalabilidad:**
-Como los agentes no tienen `container_name` fijo, puedes lanzar N instancias con `--scale`. RabbitMQ con `prefetch_count=1` reparte equitativamente.
+Como los agentes no tienen `container_name` fijo, es posible lanzar múltiples instancias de cada tipo de agente utilizando la opción `--scale` de Docker Compose. Esto permite aumentar la capacidad de procesamiento del sistema simplemente agregando más consumidores a las colas de RabbitMQ.
+
+RabbitMQ distribuye las tareas entre los agentes disponibles mediante el patrón de **competing consumers**, y gracias a la configuración `prefetch_count=1` reparte las tareas de forma equitativa entre las instancias activas.
+
+La configuración idónea para obtener un **escalado equilibrado del sistema** es ejecutar **6 consumidores en total**, distribuidos de la siguiente manera:
+
+- **3 agentes de texto**
+- **3 agentes de imágenes**
+
+Esto permite que ambos tipos de tareas se procesen en paralelo sin generar cuellos de botella en un solo tipo de agente.
+
+La forma recomendada de levantar esta configuración es:
+
+```bash
+docker compose up --scale text-agent=3 --scale image-agent=3
+```
+
+Con esta configuración se mantiene un flujo estable entre el Task Producer, RabbitMQ y los agentes consumidores, permitiendo procesar múltiples tareas simultáneamente y manteniendo balanceado el sistema.
 
 ---
 
