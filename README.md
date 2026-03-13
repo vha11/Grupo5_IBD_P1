@@ -1,366 +1,188 @@
-# Práctica 1 — Infraestructura de Procesamiento de Tareas con Agentes de IA
+# Práctica 1 — Grupo 05
+# Infraestructura de Procesamiento de Tareas con Agentes de IA
 
+Básicamente construimos una "fábrica de tareas" distribuida: hay alguien generando trabajo sin parar, una cinta transportadora (RabbitMQ) que reparte ese trabajo, y agentes que lo procesan. Todo corre en contenedores Docker, todo persiste aunque caigas, y ahora además cada agente tiene su propia ventanilla donde puedes ir a pedirle cosas directamente.
 
-En esta práctica implementamos una infraestructura distribuida para procesar tareas usando agentes de IA simulados.
+---
 
-El sistema genera tareas automáticamente y las envía a una cola de mensajes. Los agentes consumen esas tareas, las procesan y guardan los resultados.
+## Cómo levantar todo
 
-La arquitectura que usamos es **orientada a eventos**, lo que permite que el sistema funcione de forma **asíncrona** y que los agentes puedan procesar tareas en paralelo.
+Necesitas Docker. Nada más.
 
-
-# Cómo desplegar la infraestructura del sistema
-
-Para ejecutar toda la infraestructura se utiliza **Docker Compose**.
-
-1. Clonar el repositorio
-
-```
+```bash
 git clone <URL_DEL_REPOSITORIO>
+cd practica1
+docker compose build && docker compose up
 ```
 
-2. Entrar al directorio del proyecto
+Eso levanta automáticamente:
+- RabbitMQ (el cartero que reparte tareas)
+- Task Producer (el que genera trabajo sin descanso)
+- Text Agent (analiza sentimientos de texto)
+- Image Agent (clasifica imágenes, agente bonus)
+- Task Logger (el registro global de todo lo que pasa)
 
-```
-cd Grupo5_IBD_P1
-```
+---
 
-3. Construir y ejecutar todos los servicios
+## Cómo ejecutar los agentes
 
-```
-docker compose up --build
-```
+Se levantan solos con el `docker compose up`. Pero si quieres más potencia, puedes escalar:
 
-Esto iniciará automáticamente los siguientes componentes del sistema:
-
-- RabbitMQ (broker de mensajes)
-- Task Producer
-- Text Agent
-- Image Agent
-- Task Logger
-
-Todos los servicios se ejecutan dentro de contenedores Docker y se comunican a través de la red `bigdata_net`.
-El despliegue se gestiona completamente mediante **Docker Compose**, lo que permite ejecutar todos los componentes del sistema de forma reproducible.
-
-
-
-# Cómo ejecutar los agentes
-
-Los agentes se ejecutan automáticamente como parte de los servicios definidos en `docker-compose.yml`.
-
-Al ejecutar:
-
-```
-docker compose up
-```
-
-se levantan los contenedores:
-
-- `text-agent`
-- `image-agent`
-
-Estos agentes se conectan al broker RabbitMQ y comienzan a consumir tareas de las colas correspondientes.
-
-También es posible escalar horizontalmente los agentes para aumentar la capacidad de procesamiento. Por ejemplo:
-
-```
+```bash
+# 3 agentes de texto procesando en paralelo
 docker compose up --scale text-agent=3
 ```
 
-Esto ejecutará tres instancias del agente de texto procesando tareas en paralelo.
+Cada instancia compite por las tareas de la cola. RabbitMQ se encarga de que ninguna tarea se procese dos veces.
 
+---
 
-# Cómo probar el funcionamiento del sistema
+## Cómo probar que funciona
 
-Una vez desplegado el sistema se pueden realizar varias verificaciones para comprobar que funciona correctamente.
+### Ver el estado general
 
-### 1. Verificar RabbitMQ
-
-RabbitMQ incluye una interfaz de administración accesible en:
-
-```
-http://localhost:15672
+```bash
+docker compose ps
 ```
 
-Credenciales:
+### RabbitMQ — la cinta transportadora
 
+Entra a `http://localhost:15672` con `grupo5` / `cbadenes` y ves en tiempo real cuántas tareas hay en cola y cuántos agentes están consumiendo.
+
+### API síncrona de los agentes (nuevo en Día 2)
+
+Cada agente tiene su propia API REST. Puedes mandarle tareas directamente sin pasar por RabbitMQ:
+
+**Text Agent** (puerto 8001):
+```bash
+# Enviar una tarea
+curl -X POST http://localhost:8001/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"content": "This product is amazing!"}'
+
+# Ver todas las tareas que conoce
+curl http://localhost:8001/tasks
+
+# Ver el resultado de una tarea concreta
+curl http://localhost:8001/tasks/<task_id>
 ```
-usuario: grupo5
-password: cbadenes
+
+**Image Agent** (puerto 8002) — mismos endpoints:
+```bash
+curl -X POST http://localhost:8002/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"content": "photo_cat.png"}'
 ```
 
-Desde esta interfaz se pueden observar:
+### Global Task Logger (puerto 8000)
 
-- las colas del sistema
-- los mensajes que se están procesando
-- el consumo de tareas por parte de los agentes
+El logger central guarda todo en memoria y en disco (`tasks_log.csv`). Si reinicias el contenedor, los datos del CSV se recuperan solos.
 
+```bash
+# Ver todos los resultados
+curl http://localhost:8000/results
 
+# Ver resultado de una tarea específica
+curl http://localhost:8000/results/<task_id>
 
-### 2. Verificar generación de tareas
-
-El **Task Producer** genera tareas automáticamente con una frecuencia de **1 tarea por segundo**.
-
-En los logs del contenedor se puede observar la generación de tareas:
-
+# Estadísticas globales del sistema
+curl http://localhost:8000/stats
 ```
+
+O entra directo al navegador: `http://localhost:8000/docs` — FastAPI genera una UI interactiva.
+
+### Ver el CSV persistido en disco
+
+```bash
+docker exec task-logger cat /data/tasks_log.csv
+```
+
+### Ver logs de cada servicio
+
+```bash
 docker compose logs task-producer
-```
-
-
-
-### 3. Verificar procesamiento de tareas
-
-Los agentes consumen tareas desde RabbitMQ y generan resultados.
-
-Esto puede observarse en los logs:
-
-```
 docker compose logs text-agent
 docker compose logs image-agent
 ```
 
+---
 
-
-### 4. Verificar resultados generados
-
-Cada agente guarda sus resultados en archivos CSV dentro del volumen Docker.
-
-Ejemplos:
+## Arquitectura
 
 ```
-/data/text_agent_results.csv
-/data/image_agent_results.csv
+Producer → RabbitMQ → Agents → CSV propio + Task Logger (CSV global)
+                ↑
+         API HTTP directa (síncrono)
 ```
 
-Estos archivos permiten comprobar qué tareas fueron procesadas por cada agente.
+El flujo asíncrono (el original):
+1. El Producer genera 1 tarea/segundo y la manda a RabbitMQ
+2. RabbitMQ la pone en la cola correcta (`text_tasks` o `image_tasks`)
+3. El agente disponible la toma, la procesa (3-5 segundos simulados)
+4. Guarda el resultado en su CSV propio y notifica al Task Logger
+5. Hace ACK a RabbitMQ → tarea confirmada, no se pierde
 
+El flujo síncrono (nuevo en Día 2):
+1. Alguien hace `POST /tasks` directo al agente
+2. El agente acepta (202) y procesa en un hilo aparte
+3. Puedes consultar el estado con `GET /tasks/<id>`
+4. El resultado también llega al Task Logger
 
-
-### 5. Consultar el logger
-
-El **Task Logger** expone una API accesible en:
-
-```
-http://localhost:8000
-```
-
-Se pueden consultar estadísticas del sistema en:
-
-```
-http://localhost:8000/stats
-```
-
-Esto permite verificar que los resultados están siendo enviados correctamente por los agentes.
+Ambos flujos conviven en el mismo contenedor usando **threads**.
 
 ---
 
-# Arquitectura del sistema
+## Decisiones de diseño
 
-El sistema está compuesto por los siguientes servicios:
+**¿Por qué RabbitMQ?**
+Porque necesitamos que las tareas no se pierdan aunque los agentes estén ocupados. RabbitMQ actúa como buffer: el producer manda sin importar si hay alguien escuchando, y los agentes consumen a su ritmo. Colas `durable=True` + mensajes persistentes (`delivery_mode=2`) = nada se pierde ni si se cae el broker.
 
-- **RabbitMQ** → broker de mensajes  
-- **Task Producer** → genera tareas continuamente  
-- **Text Agent** → analiza texto (simulación de análisis de sentimiento)  
-- **Image Agent** → clasifica imágenes (simulación)  
-- **Task Logger** → API central que recibe resultados de los agentes  
+**¿Por qué ACK manual?**
+Los agentes solo confirman la tarea *después* de guardar el resultado. Si algo falla antes del ACK, RabbitMQ la reencola. Orden: guardar CSV → notificar logger → ACK.
 
-Flujo del sistema:
+**¿Por qué Flask en los agentes?**
+El enunciado pide que cada agente pueda recibir peticiones síncronas. Flask corre en el hilo principal, el consumidor de RabbitMQ en un hilo aparte. Mismo contenedor, dos cosas a la vez.
 
-```
-Producer → RabbitMQ → Agents → CSV + Logger
-```
+**¿Por qué FastAPI en el logger?**
+Ya estaba montado del Día 1 y viene con documentación automática en `/docs`. Para el logger tiene más sentido que Flask porque maneja múltiples endpoints con validación de datos.
 
-1. El **producer** genera tareas.  
-2. Las tareas se envían a RabbitMQ.  
-3. Los agentes consumen las tareas desde la cola.  
-4. Cada agente procesa la tarea.  
-5. El resultado se guarda en CSV y se envía al logger.  
-
-
-
-# Justificación de las decisiones
-
-## Arquitectura orientada a eventos
-
-Elegimos una **Event-Driven Architecture** porque el sistema necesita procesar tareas de forma **asíncrona**, como vimos en clase.
-
-El productor genera eventos (tareas) y los agentes reaccionan a esos eventos cuando están disponibles. Esto evita que los servicios dependan directamente unos de otros y permite que el sistema escale fácilmente.
-
-
-
-## Red Docker
-
-Para la comunicación entre los distintos servicios utilizamos una red Docker llamada `bigdata_net`.
-
-La práctica pide implementar una **infraestructura distribuida basada en contenedores**, reducir posibles **conflictos con otras infraestructuras** y mantener una **comunicación controlada entre servicios**. Esto implica que los contenedores deben poder comunicarse entre sí, pero sin interferir con otros servicios que puedan estar ejecutándose en el host.
-
-Por esta razón utilizamos una red de tipo **bridge**. Este tipo de red permite que los contenedores se comuniquen dentro del mismo host de forma aislada, manteniendo separada la infraestructura del resto del sistema.
-
-Además, usar una red Docker permite que los servicios se descubran entre sí utilizando el nombre definido en Docker Compose (por ejemplo `rabbitmq`), sin necesidad de configurar direcciones IP manualmente.
-
-
-
-## Uso de RabbitMQ
-
-RabbitMQ se usa como **message broker** para gestionar las tareas.
-
-Las tareas se envían a dos colas:
-
-- `text_tasks`
-- `image_tasks`
-
-Estas colas se declaran como **durable=True**, lo que permite que sobrevivan reinicios del broker.
-
-Además, los mensajes se publican como **persistentes** usando:
-
-```python
-delivery_mode = 2
-```
-
-Esto ayuda a evitar la pérdida de tareas.
-
-
-
-## Procesamiento asíncrono
-
-Los agentes consumen tareas desde RabbitMQ usando `basic_consume`.
-
-Cada agente procesa las tareas con un tiempo simulado entre **3 y 5 segundos**, como se pide en las instrucciones de la práctica.
-
-```python
-time.sleep(random.uniform(3,5))
-```
-
-Esto permite probar cómo el sistema maneja colas de tareas cuando el procesamiento tarda más que la generación.
-
-
-
-## Confirmación de tareas (ACK)
-
-Los agentes solo confirman la tarea después de procesarla correctamente.
-
-Orden de ejecución:
-
-```
-guardar resultado → notificar logger → ACK
-```
-
-Si el agente falla antes del ACK, RabbitMQ vuelve a enviar la tarea a otro agente.
-
-Esto ayuda a cumplir el requisito de **no perder tareas**.
-
-
-
-## Persistencia de resultados
-
-Cada agente guarda sus resultados en archivos CSV dentro de un volumen Docker.
-
-Ejemplos:
-
-```
-/data/text_agent_results.csv
-/data/image_agent_results.csv
-```
-
-Esto permite que los resultados **no se pierdan si el contenedor se reinicia**.
-
-Además cada agente incluye su `agent_id` (hostname del contenedor) para poder diferenciar qué instancia procesó cada tarea.
-
-
-
-## Escalabilidad
-
-La arquitectura permite ejecutar múltiples instancias de agentes.
-
-Ejemplo:
-
-```
-docker compose up --scale text-agent=3
-```
-
-Esto permite que varios agentes procesen tareas al mismo tiempo, aumentando la capacidad del sistema.
-
-
-
-# Componentes del sistema
-
-## Producer
-
-Genera tareas automáticamente.
-
-Cada tarea tiene el formato:
-
-```json
-{
- "task_id": "...",
- "type": "text_analysis | image_classification",
- "content": "..."
-}
-```
-
-Las tareas se generan a una frecuencia configurable (`TASK_RATE`).
-
-
-
-## Text Agent
-
-Procesa tareas de análisis de texto.
-
-Simula un análisis de sentimiento usando reglas simples y genera:
-
-```
-task_id
-sentiment
-confidence
-timestamp
-agent_id
-```
-
-
-
-## Image Agent
-
-Procesa tareas de clasificación de imágenes.
-
-El agente genera una etiqueta aleatoria y un valor de confianza.
-
-```
-task_id
-label
-confidence
-timestamp
-agent_id
-```
-
-
-
-## Task Logger
-
-Es una API construida con **FastAPI** que recibe los resultados de los agentes.
-
-Los agentes envían los resultados usando:
-
-```
-POST /results
-```
-
-El logger mantiene los resultados en memoria y permite consultar estadísticas del sistema.
+**Escalabilidad:**
+Como los agentes no tienen `container_name` fijo, puedes lanzar N instancias con `--scale`. RabbitMQ con `prefetch_count=1` reparte equitativamente.
 
 ---
 
-# Estructura del repositorio
+## Estructura del repositorio
 
 ```
-Grupo5_IBD_P1
-│
-├ docker-compose.yml
-├ README.md
-│
-├ producer
-├ text_agent
-├ image_agent
-└ task_logger
+practica1/
+├── docker-compose.yml
+├── README.md
+├── producer/
+│   ├── Dockerfile
+│   ├── producer.py
+│   └── requirements.txt
+├── text_agent/
+│   ├── Dockerfile
+│   ├── text_agent.py
+│   └── requirements.txt
+├── image_agent/
+│   ├── Dockerfile
+│   ├── image_agent.py
+│   └── requirements.txt
+└── task_logger/
+    ├── Dockerfile
+    ├── main.py
+    └── requirements.txt
 ```
 
-La infraestructura desarrollada permite procesar tareas de forma distribuida utilizando una arquitectura orientada a eventos.  
-El sistema soporta procesamiento asíncrono, persistencia de resultados y escalabilidad horizontal mediante contenedores Docker.
+---
+
+## Puertos expuestos
+
+| Servicio | Puerto | Qué es |
+|----------|--------|--------|
+| RabbitMQ UI | 15672 | Dashboard de colas |
+| RabbitMQ AMQP | 5672 | Conexión interna de agentes |
+| Task Logger | 8000 | API global + `/docs` |
+| Text Agent | 8001 | API síncrona del agente |
+| Image Agent | 8002 | API síncrona del agente |

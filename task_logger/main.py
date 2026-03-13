@@ -49,9 +49,27 @@ def append_to_csv(entry: dict):
         ])
         writer.writerow(row)
 
+def load_csv():
+    if not os.path.exists(CSV_PATH):
+        return
+    with open(CSV_PATH, "r", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            entry = {
+                "task_id":    row["task_id"],
+                "agent_id":   row["agent"],
+                "timestamp":  row["timestamp"],
+                "confidence": float(row["confidence"]) if row["confidence"] else None,
+                "sentiment":  row["result"] if row["result"] in ("positive", "negative", "neutral") else None,
+                "label":      row["result"] if row["result"] not in ("positive", "negative", "neutral", "") else None,
+            }
+            results_db.append(entry)
+    logging.info(f"CSV cargado: {len(results_db)} registros previos restaurados")
+
 @app.on_event("startup")
 def startup_event():
     init_csv()
+    load_csv()
 
 @app.get("/", tags=["Info"])
 def root():
