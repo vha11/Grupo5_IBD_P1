@@ -1,12 +1,11 @@
 services:
 
-  # BROKER DE MENSAJES
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq
     ports:
-      - "5672:5672"       
-      - "15672:15672"    
+      - "5672:5672"
+      - "15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: grupo5
       RABBITMQ_DEFAULT_PASS: cbadenes
@@ -18,18 +17,17 @@ services:
     networks:
       - bigdata_net
 
-
   task-producer:
     build: ./producer
     container_name: task-producer
     depends_on:
       rabbitmq:
-        condition: service_healthy   
+        condition: service_healthy
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USER: grupo5
       RABBITMQ_PASS: cbadenes
-      TASK_RATE: 1                   # 1 tarea por segundo
+      TASK_RATE: 1
     networks:
       - bigdata_net
 
@@ -43,11 +41,13 @@ services:
       RABBITMQ_USER: grupo5
       RABBITMQ_PASS: cbadenes
       LOGGER_URL: http://task-logger:8000
+      HTTP_PORT: 8001
+    ports:
+      - "8001:8001"
     volumes:
-      - text_results:/data           # CSV persiste aunque el contenedor muera
+      - text_results:/data
     networks:
       - bigdata_net
-
 
   image-agent:
     build: ./image_agent
@@ -59,24 +59,28 @@ services:
       RABBITMQ_USER: grupo5
       RABBITMQ_PASS: cbadenes
       LOGGER_URL: http://task-logger:8000
+      HTTP_PORT: 8002
+    ports:
+      - "8002:8002"
     volumes:
       - image_results:/data
     networks:
       - bigdata_net
 
-
   task-logger:
     build: ./task_logger
     container_name: task-logger
     ports:
-      - "8000:8000"                
+      - "8000:8000"
+    volumes:
+      - global_logs:/data
     networks:
       - bigdata_net
 
-# VOLUMENES PERSISTENTES
 volumes:
-  text_results:    # almacena text_agent_results.csv
-  image_results:   # almacena image_agent_results.csv
+  text_results:
+  image_results:
+  global_logs:
 
 networks:
   bigdata_net:

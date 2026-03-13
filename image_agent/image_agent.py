@@ -7,18 +7,25 @@ import random
 import socket
 import requests
 import logging
+import threading
 from datetime import datetime
+from flask import Flask, request, jsonify
 
 logging.basicConfig(level=logging.INFO, format='[IMAGE-AGENT] %(message)s')
 
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
-RABBITMQ_USER = os.getenv("RABBITMQ_USER", "admin")
-RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "admin")
+RABBITMQ_USER = os.getenv("RABBITMQ_USER", "grupo5")
+RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "cbadenes")
 LOGGER_URL    = os.getenv("LOGGER_URL", "http://localhost:8000")
 CSV_PATH      = "/data/image_agent_results.csv"
+HTTP_PORT     = int(os.getenv("HTTP_PORT", "8002"))
 AGENT_ID      = socket.gethostname()
 
-IMAGE_LABELS  = ["dog", "cat", "bird", "car", "tree", "person", "building", "food"]
+IMAGE_LABELS = ["dog", "cat", "bird", "car", "tree", "person", "building", "food"]
+
+app = Flask(__name__)
+tasks_db = {}
+db_lock = threading.Lock()
 
 def connect_rabbitmq():
     credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASS)
@@ -53,14 +60,21 @@ def notify_logger(result: dict):
     except Exception as e:
         logging.warning(f"No se pudo notificar al logger: {e}")
 
-def process_task(ch, method, properties, body):
-    task = json.loads(body)
+def process_image_task(task: dict):
     task_id = task['task_id']
+
+    with db_lock:
+        tasks_db[task_id] = {
+            "task_id": task_id,
+            "type": "image_classification",
+            "content": task["content"],
+            "status": "processing",
+            "result": None
+        }
 
     logging.info(f"Clasificando imagen {task_id[:8]}... archivo: '{task['content']}'")
 
-    
-    time.sleep(random.uniform(3, 5)) # aqupi puse lo del requsiito de que la tarea tarde de entre 3 a 5 segundos
+    time.sleep(random.uniform(3, 5))
 
     result = {
         "task_id":    task_id,
@@ -71,12 +85,20 @@ def process_task(ch, method, properties, body):
     }
 
     save_to_csv(result)
+    notify_logger(result)
+
+    with db_lock:
+        tasks_db[task_id]["status"] = "done"
+        tasks_db[task_id]["result"] = result
+
     logging.info(f"Clasificado: {task_id[:8]}... → {result['label']} ({result['confidence']})")
 
-    notify_logger(result)
+def process_task(ch, method, properties, body):
+    task = json.loads(body)
+    process_image_task(task)
     ch.basic_ack(delivery_tag=method.delivery_tag)
 
-def main():
+def consume_tasks():
     init_csv()
     connection = connect_rabbitmq()
     channel = connection.channel()
@@ -89,10 +111,66 @@ def main():
 
     try:
         channel.start_consuming()
-    except KeyboardInterrupt:
-        channel.stop_consuming()
     finally:
         connection.close()
 
+@app.get("/")
+def root():
+    return {
+        "agent": "image-agent",
+        "agent_id": AGENT_ID,
+        "status": "running",
+        "endpoints": ["/tasks", "/tasks/<task_id>"]
+    }
+
+@app.post("/tasks")
+def create_task():
+    data = request.get_json()
+    if not data or "content" not in data:
+        return jsonify({"error": "Falta campo 'content'"}), 400
+
+    task_id = f"img-{int(time.time()*1000)}-{random.randint(1000,9999)}"
+    task = {
+        "task_id": task_id,
+        "type": "image_classification",
+        "content": data["content"]
+    }
+
+    with db_lock:
+        tasks_db[task_id] = {
+            "task_id": task_id,
+            "type": "image_classification",
+            "content": data["content"],
+            "status": "accepted",
+            "result": None
+        }
+
+    thread = threading.Thread(target=process_image_task, args=(task,), daemon=True)
+    thread.start()
+
+    return jsonify({
+        "message": "Tarea aceptada",
+        "task_id": task_id,
+        "status": "accepted"
+    }), 202
+
+@app.get("/tasks")
+def get_tasks():
+    with db_lock:
+        return jsonify(list(tasks_db.values()))
+
+@app.get("/tasks/<task_id>")
+def get_task(task_id):
+    with db_lock:
+        task = tasks_db.get(task_id)
+
+    if not task:
+        return jsonify({"error": f"task_id '{task_id}' no encontrado"}), 404
+
+    return jsonify(task)
+
 if __name__ == "__main__":
-    main()
+    consumer_thread = threading.Thread(target=consume_tasks, daemon=True)
+    consumer_thread.start()
+
+    app.run(host="0.0.0.0", port=HTTP_PORT, debug=False)
