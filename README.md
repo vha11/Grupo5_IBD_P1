@@ -110,23 +110,35 @@ docker compose logs image-agent
 ## Arquitectura
 
 ```
-Producer → RabbitMQ → Agents → CSV propio + Task Logger (CSV global)
-                ↑
-         API HTTP directa (síncrono)
+                         text_tasks  ┌─────────────┐
+                       ┌────────────►│  Text Agent │─────┐
+                       │             └─────────────┘     │
+Producer ──► RabbitMQ ─┤                                  ├──► task_results ──► Task Logger
+                       │             ┌─────────────┐     │                       (CSV global)
+                       └────────────►│ Image Agent │─────┘
+                         image_tasks └─────────────┘
+                              ▲
+                    API HTTP directa (síncrono)
 ```
+
+**3 colas en RabbitMQ:**
+- `text_tasks` — tareas de análisis de sentimiento
+- `image_tasks` — tareas de clasificación de imagen
+- `task_results` — resultados de cualquier agente → los consume el Task Logger
 
 El flujo asíncrono (el original):
 1. El Producer genera 1 tarea/segundo y la manda a RabbitMQ
 2. RabbitMQ la pone en la cola correcta (`text_tasks` o `image_tasks`)
 3. El agente disponible la toma, la procesa (3-5 segundos simulados)
-4. Guarda el resultado en su CSV propio y notifica al Task Logger
+4. Guarda el resultado en su CSV propio y **publica en la cola `task_results`**
 5. Hace ACK a RabbitMQ → tarea confirmada, no se pierde
+6. El Task Logger consume `task_results` y lo persiste en su CSV global
 
 El flujo síncrono (nuevo en Día 2):
 1. Alguien hace `POST /tasks` directo al agente
 2. El agente acepta (202) y procesa en un hilo aparte
 3. Puedes consultar el estado con `GET /tasks/<id>`
-4. El resultado también llega al Task Logger
+4. El resultado también se publica en `task_results` → llega al Task Logger
 
 Ambos flujos conviven en el mismo contenedor usando **threads**.
 
@@ -145,6 +157,9 @@ El enunciado pide que cada agente pueda recibir peticiones síncronas. Flask cor
 
 **¿Por qué FastAPI en el logger?**
 Ya estaba montado del Día 1 y viene con documentación automática en `/docs`. Para el logger tiene más sentido que Flask porque maneja múltiples endpoints con validación de datos.
+
+**¿Por qué el Task Logger consume de RabbitMQ en vez de recibir HTTP?**
+Porque así el logger es independiente de que los agentes estén vivos. Si el logger se cae y vuelve, los resultados que llegaron mientras tanto siguen en la cola esperándole — nada se pierde. Además, si escalas a 10 agentes, todos publican en `task_results` sin saber quién los escucha. El logger (o cualquier otro consumidor futuro) los recoge sin que los agentes cambien nada.
 
 **Escalabilidad:**
 Como los agentes no tienen `container_name` fijo, puedes lanzar N instancias con `--scale`. RabbitMQ con `prefetch_count=1` reparte equitativamente.
